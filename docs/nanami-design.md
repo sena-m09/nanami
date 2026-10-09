@@ -77,13 +77,13 @@ Oct 9, 2026 · @Sena Murakami
 | 項目 | 方針 |
 | --- | --- |
 | 設定ディレクトリ | `CLAUDE_CONFIG_DIR=<nanami>/.claude-config` で起動。初回に一度だけログイン。transcript もこの配下にたまる |
-| Claude Code バージョン | `npm i -g @anthropic-ai/claude-code@<固定版>`、自動更新は無効化。実行時に `claude --version` を meta に記録 |
-| モデル | `--model` で明示し、meta に記録 |
+| Claude Code バージョン | 利用者が普段使っている PATH 上の `claude`（`nanami.config.json` の `claudeCode.bin` で差し替え可）を、シェルを通さずに起動する。実験用セッションには `DISABLE_AUTOUPDATER=1` を渡す。起動前に `claude --version` を読み、`claudeCode.version` と違えば警告して起動は続け、実際の version を meta に記録。実験期間中は普段の claude の自動更新も止めて version をそろえる |
+| モデル | `--model` と `--effort` で明示し、meta に記録 |
 | 対象アプリ | 別リポジトリ（sandbox）の固定コミットから、ランごとに `git worktree` を切る |
-| 条件ファイル | `conditions/<id>/` の CLAUDE.md・skills・ハーネス・トークンを worktree にコピー。c0 にはハーネス関連を一切置かない |
+| 条件ファイル | `conditions/<id>/` の CLAUDE.md・skills・ハーネス・トークンを worktree にコピー。`.mcp.json` はコピーせず起動引数で渡す。c0 にはハーネス関連を一切置かない |
 | 計測用 hooks | 全条件共通で `.claude/settings.json` に入れる。条件側の設定とマージする |
 | 権限 | 許可ルールを全条件で同一にし、実装中に権限ダイアログが出ないようにする。出るとその待ち時間が稼働時間に混ざる |
-| MCP | Playwright MCP を使うなら c1・c2 の `.mcp.json` にだけ置く |
+| MCP | 起動時に常に `--strict-mcp-config` を付け、c1・c2 だけ `conditions/<id>/.mcp.json` を `--mcp-config` で渡す。worktree には `.mcp.json` を置かないので、承認ダイアログが出ず、エージェントからも見えない。claude.ai アカウントのコネクタは `ENABLE_CLAUDEAI_MCP_SERVERS=false` で切る |
 | run の紐付け | runner が `NANAMI_RUN_ID` と `NANAMI_RUN_DIR` を環境変数で渡す。worktree 内には計測用ファイルを置かない（エージェントが読めてしまうため） |
 | 開発サーバー | ポートとフォントを固定。ランごとに立ち上げ直す |
 
@@ -97,9 +97,9 @@ Oct 9, 2026 · @Sena Murakami
 
 ```text
 書き出し元                         生データ                      集計
-hooks/log-event.mjs  ──┐
+hooks/log-event.ts   ──┐
 runner (start/finish/label) ─┤
-ハーネスのログ出力     ──┼──▶  runs/<run_id>/*  ──▶  analysis/ingest.mjs ──▶ nanami.duckdb ──▶ report/build.mjs ──▶ dist/
+ハーネスのログ出力     ──┼──▶  runs/<run_id>/*  ──▶  analysis/ingest.ts ──▶ nanami.duckdb ──▶ report/build.ts ──▶ dist/
 独立評価器 (eval/)     ──┘
 ```
 
@@ -107,20 +107,21 @@ runner (start/finish/label) ─┤
 
 ```text
 nanami/
-  nanami.config.json        # Claude Code 版・モデル・打ち切り上限・sandbox のパスと基準コミット
+  nanami.config.json        # Claude Code 版・モデル・effort・打ち切り上限・sandbox のパスと基準コミット・単価
   conditions/
     c0-none/               # CLAUDE.md, settings.json, classify.json
-    c1-pw/                 # ＋ skills/, harness/, .mcp.json
+    c1-pw/                 # ＋ skills/, harness/, .mcp.json（.mcp.json は --mcp-config で渡す）
     c2-tokens-pw/          # ＋ tokens/
   tasks/
     s-button/              # prompt.md, spec.md, reference/*.png, eval.json
     m-card/
     l-layout/
-  hooks/log-event.mjs      # 全条件共通のイベントロガー（stdout に何も出さない）
+  hooks/log-event.ts       # 全条件共通のイベントロガー（stdout に何も出さない）
+  bin/nanami.ts            # CLI の入口
   runner/                  # nanami plan / start / finish / label
-  eval/                    # Dockerfile, evaluate.mjs
-  analysis/                # ingest.mjs, views.sql
-  report/                  # build.mjs → dist/
+  eval/                    # Dockerfile, evaluate.ts
+  analysis/                # ingest.ts, views.sql
+  report/                  # build.ts → dist/
   runs/<run_id>/
     meta.json              # 条件・お題・回数・版・モデル・outcome
     events.jsonl           # hooks の生イベント
@@ -172,20 +173,20 @@ CREATE TABLE evals (
 ```json
 {
   "hooks": {
-    "SessionStart":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "SubagentStop":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "Notification":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "PreCompact":       [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }],
-    "SessionEnd":       [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.mjs\"" }] }]
+    "SessionStart":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "SubagentStop":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "PreCompact":       [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }],
+    "SessionEnd":       [{ "hooks": [{ "type": "command", "command": "node \"$NANAMI_HOME/hooks/log-event.ts\"" }] }]
   }
 }
 ```
 
-`log-event.mjs` の要件：
+`log-event.ts` の要件：
 
 - stdin の JSON（session_id、transcript_path、hook_event_name、tool_name、tool_input、prompt など）に、受信時刻と `NANAMI_RUN_ID` を足して `$NANAMI_RUN_DIR/events.jsonl` に 1 行追記する
 - `tool_response` は大きいので先頭 2KB とバイト数だけ残す
@@ -266,7 +267,7 @@ phase は「最初の edit より前＝explore」「初回プロンプトのタ�
 
 ## 集計とレポート
 
-`analysis/ingest.mjs` が `runs/*` を読んで DuckDB に入れ直し（毎回作り直しでよい）、`views.sql` のビューで指標を出す。n が小さいので、比較は平均ではなく中央値と範囲で見せる。
+`analysis/ingest.ts` が `runs/*` を読んで DuckDB に入れ直し（毎回作り直しでよい）、`views.sql` のビューで指標を出す。n が小さいので、比較は平均ではなく中央値と範囲で見せる。
 
 エージェント稼働時間の定義（各プロンプトから、次のプロンプトまでの間にある最後の Stop まで）：
 
@@ -297,7 +298,7 @@ GROUP BY p.run_id;
 - `first_use`：category ごとの初回使用時刻と、そのときの phase（「ハーネスを初めて使ったのは実装前か後か」を見る）
 - 推定コストはモデル別単価を `nanami.config.json` に持たせて計算し、単価の参照日も記録する
 
-レポートは `report/build.mjs` が DuckDB から静的 HTML を生成する。チャートは Observable Plot などの軽いライブラリで十分。
+レポートは `report/build.ts` が DuckDB から静的 HTML を生成する。チャートは Observable Plot などの軽いライブラリで十分。
 
 | 画面 | 見せるもの | 形 |
 | --- | --- | --- |
@@ -348,7 +349,7 @@ docs/nanami-design.md の「環境の固定と隔離」「リポジトリ構成�
 ### Step 2：hooks ロガー
 
 ```text
-docs/nanami-design.md の「データ収集 > hooks ロガー」に従って hooks/log-event.mjs と、全条件共通の hooks 設定を作って。
+docs/nanami-design.md の「データ収集 > hooks ロガー」に従って hooks/log-event.ts と、全条件共通の hooks 設定を作って。
 
 要件：
 - stdin の JSON に受信時刻（ISO8601、ミリ秒）と NANAMI_RUN_ID を足して $NANAMI_RUN_DIR/events.jsonl に 1 行追記
@@ -383,7 +384,7 @@ docs/nanami-design.md の「実験プロトコル」に従って runner の CLI�
 ### Step 4：ingest とビュー
 
 ```text
-docs/nanami-design.md の「データスキーマ」「データ収集 > transcript / ツール分類」「集計とレポート」に従って analysis/ingest.mjs と views.sql を作って。
+docs/nanami-design.md の「データスキーマ」「データ収集 > transcript / ツール分類」「集計とレポート」に従って analysis/ingest.ts と views.sql を作って。
 
 - runs/* を読み、nanami.duckdb を毎回作り直す
 - llm_calls は message.id で重複除去し、isSidechain を保持
@@ -440,7 +441,7 @@ tasks/<task>/ の雛形を作って。中身は私が書くので、埋めるべ
 ### Step 9：レポート
 
 ```text
-docs/nanami-design.md の「集計とレポート」の画面表に従って、report/build.mjs で nanami.duckdb から静的 HTML を生成して。
+docs/nanami-design.md の「集計とレポート」の画面表に従って、report/build.ts で nanami.duckdb から静的 HTML を生成して。
 
 - 比較ビュー（index.html）とラン詳細（runs/<run_id>.html）
 - 比較は中央値＋範囲。平均だけの表示はしない

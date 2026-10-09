@@ -1,0 +1,19 @@
+{
+  "claudeCode": {
+    "version": "2.1.295"
+  },
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "limits": {
+    "elapsedMinutes": 60,
+    "extraPrompts": 10
+  },
+  "sandbox": {
+    "path": "",
+    "baseCommit": ""
+  },
+  "pricing": {
+    "asOf": "",
+    "models": {}
+  }
+}

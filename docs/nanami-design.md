@@ -81,7 +81,10 @@ Oct 9, 2026 · @Sena Murakami
 | モデル | `--model` と `--effort` で明示し、meta に記録 |
 | 対象アプリ | 別リポジトリ（sandbox）の固定コミットから、ランごとに `git worktree` を切る |
 | 条件ファイル | `conditions/<id>/` の CLAUDE.md・skills・ハーネス・トークンを worktree にコピー。`.mcp.json` はコピーせず起動引数で渡す。c0 にはハーネス関連を一切置かない |
-| 計測用 hooks | 全条件共通で `.claude/settings.json` に入れる。条件側の設定とマージする |
+| 計測用 hooks | 全条件共通の hooks を条件側の設定とマージし、`runs/<run_id>/settings.json` に書き出して `--settings` で渡す。worktree には置かない |
+| 自動メモリ | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` で止める。同じリポジトリの worktree は自動メモリを共有するため、止めないと前のランの記憶が次のランに入る |
+| 上の階層の指示 | 作業ディレクトリより上の CLAUDE.md・AGENTS.md・`.claude/` を `claudeMdExcludes` で読み込ませない。作業ディレクトリはホームの下（`nanami-work/`）にあり、何もしないと `~/.claude/CLAUDE.md` が読み込まれる |
+| フォルダの信頼 | 起動前に runner が作業ディレクトリを信頼済みとして `.claude-config/.claude.json` に書き込む。親ディレクトリの信頼は下のディレクトリに効かない |
 | 権限 | 許可ルールを全条件で同一にし、実装中に権限ダイアログが出ないようにする。出るとその待ち時間が稼働時間に混ざる |
 | MCP | 起動時に常に `--strict-mcp-config` を付け、c1・c2 だけ `conditions/<id>/.mcp.json` を `--mcp-config` で渡す。worktree には `.mcp.json` を置かないので、承認ダイアログが出ず、エージェントからも見えない。claude.ai アカウントのコネクタは `ENABLE_CLAUDEAI_MCP_SERVERS=false` で切る |
 | run の紐付け | runner が `NANAMI_RUN_ID` と `NANAMI_RUN_DIR` を環境変数で渡す。worktree 内には計測用ファイルを置かない（エージェントが読めてしまうため） |
@@ -168,7 +171,7 @@ CREATE TABLE evals (
 
 ### hooks ロガー
 
-全条件の `.claude/settings.json` に同じ hooks を入れる。`UserPromptSubmit` と `SessionStart` は stdout がコンテキストに注入されるので、ロガーはファイルに追記するだけで stdout には何も書かず、常に exit 0 で終わる。
+全条件に同じ hooks を `--settings` で渡す。`UserPromptSubmit` と `SessionStart` は stdout がコンテキストに注入されるので、ロガーはファイルに追記するだけで stdout には何も書かず、常に exit 0 で終わる。
 
 ```json
 {

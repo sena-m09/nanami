@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { mkdir, mkdtemp } from "node:fs/promises";
-import os from "node:os";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "../runner/config.ts";
 import { launchClaude, prepareLaunch } from "../runner/launch.ts";
-import { RUNS_DIR, assertConditionExists } from "../runner/paths.ts";
+import { RUNS_DIR, WORK_ROOT, assertConditionExists } from "../runner/paths.ts";
 
 const USAGE = `使い方:
-  nanami smoke <condition>   実験用の設定で Claude Code を空のディレクトリに起動する（例: nanami smoke c0-none）`;
+  nanami smoke <condition>   実験用の設定で Claude Code を新しいディレクトリに起動する（例: nanami smoke c0-none）`;
 
 async function smoke(conditionId: string | undefined): Promise<number> {
   if (!conditionId) {
@@ -19,12 +18,14 @@ async function smoke(conditionId: string | undefined): Promise<number> {
   const runId = `smoke-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "")}`;
   const runDir = path.join(RUNS_DIR, runId);
   await mkdir(runDir, { recursive: true });
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "nanami-smoke-"));
+  const cwd = path.join(WORK_ROOT, runId);
+  await mkdir(cwd, { recursive: true });
 
   const plan = await prepareLaunch({ config, conditionId, cwd, runId, runDir });
   console.log(`条件: ${conditionId}`);
   console.log(`run_id: ${runId}`);
   console.log(`作業ディレクトリ: ${cwd}`);
+  console.log(`イベントの記録先: ${path.join(runDir, "events.jsonl")}`);
   console.log(`Claude Code: ${plan.bin}（${plan.claudeVersion}）`);
   return launchClaude(plan);
 }

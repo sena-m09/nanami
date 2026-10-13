@@ -5,6 +5,8 @@ export const NANAMI_HOME = path.resolve(import.meta.dirname, "..");
 export const CONFIG_FILE = path.join(NANAMI_HOME, "nanami.config.json");
 export const CLAUDE_CONFIG_DIR = path.join(NANAMI_HOME, ".claude-config");
 export const RUNS_DIR = path.join(NANAMI_HOME, "runs");
+export const WORK_ROOT = path.resolve(NANAMI_HOME, "..", "nanami-work");
+export const COMMON_HOOKS_SETTINGS = path.join(NANAMI_HOME, "hooks", "settings.json");
 
 export function conditionDir(conditionId: string): string {
   return path.join(NANAMI_HOME, "conditions", conditionId);

@@ -196,6 +196,11 @@ CREATE TABLE evals (
 - 環境変数が無いとき（普段の利用）は何もせず終了する。例外は握りつぶして `$NANAMI_RUN_DIR/logger-errors.log` に書く
 - イベントごとに数十 ms かかるが、全条件に等しく乗るので許容する
 
+記録を集計するときの注意（Step 2 の smoke で確認）：
+
+- サブエージェントの結果は、`<agent-message` で始まる `UserPromptSubmit` として届く。人間の追加指示として数えず、稼働時間の区間もここで切らない
+- `agent_type` が空の `SubagentStop` では、`agent_transcript_path` のファイルが作られない（Claude Code が裏で動かすエージェントと見られる）。トークンを transcript から集計すると、この分は入らない
+
 ### transcript
 
 `nanami finish` が、hooks に残った `transcript_path` の JSONL と、同じセッションのサブエージェントの JSONL（版によっては別ファイル）を `runs/<run_id>/transcript/` にコピーする。集計時の注意：

@@ -38,13 +38,25 @@ if (missing.length > 0) fail(`記録されていないイベントがありま�
 const errorsFile = path.join(runDir, "logger-errors.log");
 if (existsSync(errorsFile)) fail(`logger-errors.log があります。中身を確かめてください: ${errorsFile}`);
 
-const transcripts = new Set(
-  events.flatMap((event) => [event.transcript_path, event.agent_transcript_path]).filter((p) => typeof p === "string")
-    .map((p) => (p as string).replace(/^~(?=\/)/, os.homedir())),
+const expandHome = (p: string) => p.replace(/^~(?=\/)/, os.homedir());
+const internalAgentTranscripts = new Set(
+  events
+    .filter((event) => event.hook_event_name === "SubagentStop" && !event.agent_type)
+    .map((event) => expandHome(String(event.agent_transcript_path))),
 );
-for (const transcript of transcripts as Set<string>) {
+const transcripts = new Set(
+  events
+    .flatMap((event) => [event.transcript_path, event.agent_transcript_path])
+    .filter((p) => typeof p === "string")
+    .map((p) => expandHome(p as string)),
+);
+for (const transcript of transcripts) {
   if (!existsSync(transcript)) {
-    fail(`transcript が見つかりません: ${transcript}`);
+    if (internalAgentTranscripts.has(transcript)) {
+      console.log(`transcript なし（種類が空のサブエージェントで、ファイルは作られません）: ${transcript}`);
+    } else {
+      fail(`transcript が見つかりません: ${transcript}`);
+    }
     continue;
   }
   const lines = readFileSync(transcript, "utf8").split("\n").filter((line) => line !== "");

@@ -4,6 +4,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { NanamiConfig } from "./config.ts";
 import { CLAUDE_CONFIG_DIR, NANAMI_HOME, assertConditionExists, conditionDir } from "./paths.ts";
+import { writeRunSettings } from "./settings.ts";
+import { markDirectoryTrusted } from "./trust.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,7 +22,7 @@ export type LaunchOptions = {
 
 export function buildEnv(
   parentEnv: NodeJS.ProcessEnv,
-  { runId, runDir }: Pick<LaunchOptions, "runId" | "runDir">,
+  run?: Pick<LaunchOptions, "runId" | "runDir">,
 ): NodeJS.ProcessEnv {
   const inherited = Object.fromEntries(
     Object.entries(parentEnv).filter(([key]) => !INHERITED_ENV_TO_DROP.test(key)),
@@ -28,16 +30,16 @@ export function buildEnv(
   return {
     ...inherited,
     CLAUDE_CONFIG_DIR,
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
     DISABLE_AUTOUPDATER: "1",
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     NANAMI_HOME,
-    NANAMI_RUN_ID: runId,
-    NANAMI_RUN_DIR: runDir,
+    ...(run && { NANAMI_RUN_ID: run.runId, NANAMI_RUN_DIR: run.runDir }),
   };
 }
 
-export function buildArgs(config: NanamiConfig, conditionId: string): string[] {
-  const args = ["--model", config.model, "--effort", config.effort, "--strict-mcp-config"];
+export function buildArgs(config: NanamiConfig, conditionId: string, settingsFile: string): string[] {
+  const args = ["--model", config.model, "--effort", config.effort, "--settings", settingsFile, "--strict-mcp-config"];
   const mcpConfig = path.join(conditionDir(conditionId), ".mcp.json");
   if (existsSync(mcpConfig)) args.push("--mcp-config", mcpConfig);
   return args;
@@ -75,7 +77,9 @@ export async function prepareLaunch(options: LaunchOptions): Promise<LaunchPlan>
       `警告: Claude Code の version が nanami.config.json と違います（設定: ${config.claudeCode.version}、実際: ${claudeVersion}）。このまま起動します。`,
     );
   }
-  return { bin, args: buildArgs(config, conditionId), env, cwd, claudeVersion };
+  const settingsFile = await writeRunSettings(conditionId, cwd, options.runDir);
+  await markDirectoryTrusted(path.join(CLAUDE_CONFIG_DIR, ".claude.json"), cwd);
+  return { bin, args: buildArgs(config, conditionId, settingsFile), env, cwd, claudeVersion };
 }
 
 export async function launchClaude({ bin, args, env, cwd }: LaunchPlan): Promise<number> {
